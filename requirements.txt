@@ -5,7 +5,9 @@ torch>=2.0.0
 torchvision
 
 # Models & Embeddings
-transformers>=4.40.0
+transformers==4.41.2
+
+
 sentence-transformers
 timm
 einops
