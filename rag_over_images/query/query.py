@@ -1,5 +1,6 @@
 import os
 import sys
+import argparse
 import torch
 import cv2
 import numpy as np
@@ -111,6 +112,42 @@ def draw_boxes(image_path, parsed_result, output_path):
     return None
 
 
+def process_query(
+    query_text, client, collection, embed_model, florence_model, florence_processor
+):
+    """Process a single query and find matching objects in images."""
+    print(f"Retrieving top images for: '{query_text}'...")
+
+    # 1. Retrieval
+    query_emb = embed_model.encode(query_text).tolist()
+    results = collection.query(query_embeddings=[query_emb], n_results=3)  # Top-3
+
+    # results['metadatas'] is a list of lists (one per query)
+    cand_paths = [m["path"] for m in results["metadatas"][0]]
+
+    # 2. Grounding
+    print("Analyzing candidate images...")
+    found_any = False
+
+    for idx, img_path in enumerate(cand_paths):
+        print(f"Checking {img_path}...")
+        result = run_grounding(florence_model, florence_processor, img_path, query_text)
+
+        # Check if boxes exist
+        if result and "<CAPTION_TO_PHRASE_GROUNDING>" in result:
+            data = result["<CAPTION_TO_PHRASE_GROUNDING>"]
+            if data.get("bboxes"):
+                output_filename = f"reuslt_{idx}.jpg"
+                saved_path = draw_boxes(img_path, result, output_filename)
+                if saved_path:
+                    print(f"--> Match Found! Saved visualization to {saved_path}")
+                    found_any = True
+
+    if not found_any:
+        print("No matching object found in the top retrieved images.")
+    return found_any
+
+
 def main_query_loop():
     print("Initializing Query System...")
 
@@ -132,42 +169,56 @@ def main_query_loop():
         if not query_text:
             continue
 
-        print(f"Retrieving top images for: '{query_text}'...")
-
-        # 1. Retrieval
-        query_emb = embed_model.encode(query_text).tolist()
-        results = collection.query(query_embeddings=[query_emb], n_results=3)  # Top-3
-
-        # results['metadatas'] is a list of lists (one per query)
-        cand_paths = [m["path"] for m in results["metadatas"][0]]
-
-        # 2. Grounding
-        print("Analyzing candidate images...")
-        found_any = False
-
-        for idx, img_path in enumerate(cand_paths):
-            print(f"Checking {img_path}...")
-            result = run_grounding(
-                florence_model, florence_processor, img_path, query_text
-            )
-
-            # Check if boxes exist
-            if result and "<CAPTION_TO_PHRASE_GROUNDING>" in result:
-                data = result["<CAPTION_TO_PHRASE_GROUNDING>"]
-                if data.get("bboxes"):
-                    output_filename = f"reuslt_{idx}.jpg"
-                    saved_path = draw_boxes(img_path, result, output_filename)
-                    if saved_path:
-                        print(f"--> Match Found! Saved visualization to {saved_path}")
-                        found_any = True
-
-        if not found_any:
-            print("No matching object found in the top retrieved images.")
+        process_query(
+            query_text,
+            client,
+            collection,
+            embed_model,
+            florence_model,
+            florence_processor,
+        )
 
 
 def main():
-    main_query_loop()
+    parser = argparse.ArgumentParser(
+        description="Query images for objects using RAG",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--query", type=str, help="Text query to search for objects (e.g., 'a red car')"
+    )
+    parser.add_argument(
+        "--interactive",
+        "-i",
+        action="store_true",
+        help="Run in interactive mode instead of single query",
+    )
 
+    args = parser.parse_args()
 
-if __name__ == "__main__":
-    main()
+    if args.query:
+        # Single query mode
+        print("Initializing Query System...")
+
+        # Load Retrieval Resources
+        client = get_chroma_client()
+        collection = get_collection(client)
+        embed_model = get_embedding_model()
+
+        # Load Grounding Resources
+        florence_model, florence_processor = load_florence_model()
+
+        process_query(
+            args.query,
+            client,
+            collection,
+            embed_model,
+            florence_model,
+            florence_processor,
+        )
+    elif args.interactive:
+        # Interactive mode
+        main_query_loop()
+    else:
+        # Default to interactive if no args
+        main_query_loop()

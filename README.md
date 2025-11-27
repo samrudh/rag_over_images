@@ -74,8 +74,11 @@ pip install -e .
 # Ingest images into the vector database
 rag-ingest --input-dir ./data/train --max-images 1000
 
-# Query for objects in images
-rag-query "a black sedan car"
+# Query for objects in images (single query mode)
+rag-query --query "a black sedan car"
+
+# Run interactive query mode
+rag-query --interactive
 
 # Start the web application
 rag-app
