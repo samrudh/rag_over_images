@@ -1,0 +1,76 @@
+[project]
+name = "rag-over-images"
+version = "0.1.0"
+description = "RAG-based system to query and find objects from images using visual grounding"
+authors = [{name = "Your Name", email = "your.email@example.com"}]
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+    # Core ML/DL
+    "torch>=2.0.0",
+    "torchvision",
+    
+    # Models & Embeddings
+    "transformers==4.41.2",
+    "sentence-transformers",
+    "timm",
+    "einops",
+    "accelerate",
+    
+    # Vector Database
+    "chromadb>=0.4.0",
+    
+    # Image Processing
+    "Pillow",
+    "opencv-python-headless",
+    
+    # Web UI
+    "streamlit",
+    
+    # Utilities
+    "tqdm",
+    "scipy",
+    "numpy",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "black",
+    "isort",
+    "flake8",
+    "mypy",
+]
+
+[project.scripts]
+rag-ingest = "rag_over_images.ingestion.ingest:main"
+rag-query = "rag_over_images.query.query:main"
+rag-app = "rag_over_images.app:main"
+
+[project.urls]
+Homepage = "https://github.com/yourusername/rag-over-images"
+Repository = "https://github.com/yourusername/rag-over-images"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=7.0",
+    "black>=23.0.0",
+    "isort>=5.0.0",
+    "flake8>=6.0.0",
+    "mypy>=1.0.0",
+]
