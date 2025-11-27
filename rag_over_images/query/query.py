@@ -165,5 +165,9 @@ def main_query_loop():
             print("No matching object found in the top retrieved images.")
 
 
-if __name__ == "__main__":
+def main():
     main_query_loop()
+
+
+if __name__ == "__main__":
+    main()

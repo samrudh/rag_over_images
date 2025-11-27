@@ -1,5 +1,6 @@
 import os
 import sys
+import argparse
 from PIL import Image
 from tqdm import tqdm
 import random
@@ -16,7 +17,7 @@ SUPPORTED_EXTS = (".jpg", ".jpeg", ".png", ".bmp", ".webp")
 N_IMAGES = 1000
 
 
-def ingest_images(input_dir=INPUT_DIR):
+def ingest_images(input_dir=INPUT_DIR, n_images=N_IMAGES):
     """
     Reads images from input_dir, generates embeddings, and stores them in ChromaDB.
     """
@@ -32,9 +33,9 @@ def ingest_images(input_dir=INPUT_DIR):
         f for f in os.listdir(input_dir) if f.lower().endswith(SUPPORTED_EXTS)
     ]
 
-    # Randomly take N_IMAGES images
-
-    image_files = random.sample(image_files, N_IMAGES)
+    # Randomly take n_images images, but not more than available
+    n_images = min(n_images, len(image_files))
+    image_files = random.sample(image_files, n_images)
 
     if not image_files:
         print(f"No images found in {input_dir}. Please add some images.")
@@ -79,5 +80,20 @@ def ingest_images(input_dir=INPUT_DIR):
         print("No valid images processed.")
 
 
+def main():
+    parser = argparse.ArgumentParser(description="Ingest images into vector database")
+    parser.add_argument(
+        "--input-dir", required=True, help="Directory containing images"
+    )
+    parser.add_argument(
+        "--max-images",
+        type=int,
+        default=1000,
+        help="Maximum number of images to ingest",
+    )
+    args = parser.parse_args()
+    ingest_images(args.input_dir, args.max_images)
+
+
 if __name__ == "__main__":
-    ingest_images()
+    main()

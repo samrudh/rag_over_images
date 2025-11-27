@@ -1,7 +1,7 @@
-import streamlit as st
 import os
+import subprocess
+import streamlit as st
 from PIL import Image
-import numpy as np
 import shutil
 
 # Import logic
@@ -147,3 +147,7 @@ with tab2:
 
                         except Exception as e:
                             st.error(f"Error processing {img_path}: {e}")
+
+
+def main():
+    app_path = os.path.join(os.path.dirname(__file__), "app.py")
