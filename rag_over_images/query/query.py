@@ -231,8 +231,18 @@ class RAGQuerySystem:
 
         self._log(f"Caption Search found: {len(caption_paths)} images (after filtering)", log_callback)
 
-        # Merge results (deduplicate)
-        cand_paths = list(set(visual_paths + caption_paths))
+        # Merge results (deduplicate) and track source
+        candidates = {}
+        for p in visual_paths:
+            candidates[p] = "Visual"
+        
+        for p in caption_paths:
+            if p in candidates:
+                candidates[p] = "Visual + Caption"
+            else:
+                candidates[p] = "Caption"
+        
+        cand_paths = list(candidates.keys())
         self._log(f"Total unique candidates: {len(cand_paths)}", log_callback)
 
         # 4. Grounding
@@ -264,7 +274,11 @@ class RAGQuerySystem:
                     if saved_path:
                         self._log(f"--> Match Found! Saved visualization to {saved_path}", log_callback)
                         found_any = True
-                        query_results.append(saved_path)
+                        # Store path and source
+                        query_results.append({
+                            "path": saved_path,
+                            "source": candidates[img_path]
+                        })
 
         if not found_any:
             self._log("No matching object found in the top retrieved images.", log_callback)
@@ -277,8 +291,8 @@ class RAGQuerySystem:
         if not results:
             self._log("Cached result was empty (no matches found previously).", log_callback)
         else:
-            for path in results:
-                self._log(f"--> Cached Match: {path}", log_callback)
+            for item in results:
+                self._log(f"--> Cached Match: {item['path']} ({item['source']})", log_callback)
 
 
 def main():

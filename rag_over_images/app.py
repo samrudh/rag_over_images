@@ -227,11 +227,13 @@ if st.session_state.search_results is not None:
     if results:
         st.success(f"Found {len(results)} matches!")
         cols = st.columns(len(results))
-        for idx, img_path in enumerate(results):
+        for idx, item in enumerate(results):
             with cols[idx]:
                 try:
+                    img_path = item["path"]
+                    source = item["source"]
                     image = Image.open(img_path)
-                    st.image(image, caption=f"Result {idx+1}", width="stretch")
+                    st.image(image, caption=f"Result {idx+1} ({source})", width="stretch")
                 except Exception as e:
                     st.error(f"Could not load image {img_path}")
     else:
