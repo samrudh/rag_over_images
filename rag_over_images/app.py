@@ -12,6 +12,8 @@ from ingestion.ingest import ingest_images, SUPPORTED_EXTS
 # Constants
 DATA_DIR = "./data/train"
 OUTPUT_DIR = "./outputs"
+SEARCH_TIMEOUT_SEC = 10  # Timeout for search button disable
+
 if not os.path.exists(DATA_DIR):
     os.makedirs(DATA_DIR)
 if not os.path.exists(OUTPUT_DIR):
@@ -19,7 +21,10 @@ if not os.path.exists(OUTPUT_DIR):
 
 # Page Config
 st.set_page_config(page_title="RAG over Images", layout="wide")
-st.title("🖼️ RAG over Images")
+st.title("RAGI: RAG over Images")
+
+if "search_running" not in st.session_state:
+    st.session_state.search_running = False
 
 # Sidebar for Resource Loading
 st.sidebar.header("System Status")
@@ -41,7 +46,11 @@ with st.spinner("Loading Models..."):
 st.sidebar.success("System Ready!")
 
 # Verbose Toggle
-verbose_mode = st.sidebar.toggle("Verbose Mode", value=False)
+verbose_mode = st.sidebar.toggle(
+    "Verbose Mode", 
+    value=False,
+    disabled=st.session_state.search_running
+)
 
 
 # --- Ingestion Section ---
@@ -72,38 +81,74 @@ if st.button("Ingest Images"):
         st.warning("Please upload images first.")
 
 # --- Query Section ---
+# --- Query Section ---
 st.header("2. Query Images")
-query_text = st.text_input("Enter your query (e.g., 'a red car')")
 
-if st.button("Search"):
+
+if "search_results" not in st.session_state:
+    st.session_state.search_results = None
+if "search_logs" not in st.session_state:
+    st.session_state.search_logs = []
+
+def start_search():
+    st.session_state.search_running = True
+
+with st.form("query_form"):
+    query_text = st.text_input("Enter your query (e.g., 'a red car')")
+    search_submitted = st.form_submit_button(
+        "Search",
+        disabled=st.session_state.search_running,
+        on_click=start_search
+    )
+
+if search_submitted:
     if query_text:
         st.write(f"**Query:** {query_text}")
         
-        # Container for logs
+        # Clear previous results/logs
+        st.session_state.search_results = None
+        st.session_state.search_logs = []
+        
+        # Container for logs (temporary for this run)
         log_container = st.empty()
-        logs = []
-
+        
         def log_to_ui(message):
-            logs.append(message)
+            st.session_state.search_logs.append(message)
             if verbose_mode:
-                # Update the log container with all logs so far
-                log_container.code("\n".join(logs))
+                log_container.code("\n".join(st.session_state.search_logs))
 
         with st.spinner("Searching..."):
-            results = rag_system.process_query(query_text, log_callback=log_to_ui)
-
-        if results:
-            st.success(f"Found {len(results)} matches!")
-            cols = st.columns(len(results))
-            for idx, img_path in enumerate(results):
-                with cols[idx]:
-                    try:
-                        image = Image.open(img_path)
-                        st.image(image, caption=f"Result {idx+1}", use_container_width=True)
-                    except Exception as e:
-                        st.error(f"Could not load image {img_path}")
-        else:
-            st.warning("No matching objects found.")
+            try:
+                results = rag_system.process_query(
+                    query_text, 
+                    log_callback=log_to_ui,
+                    timeout=SEARCH_TIMEOUT_SEC
+                )
+                st.session_state.search_results = results
+            finally:
+                st.session_state.search_running = False
+                st.rerun()
             
     else:
         st.warning("Please enter a query.")
+        st.session_state.search_running = False
+
+# Display Results (Persistent)
+if st.session_state.search_results is not None:
+    # Re-display logs if verbose
+    if verbose_mode and st.session_state.search_logs:
+        st.code("\n".join(st.session_state.search_logs))
+
+    results = st.session_state.search_results
+    if results:
+        st.success(f"Found {len(results)} matches!")
+        cols = st.columns(len(results))
+        for idx, img_path in enumerate(results):
+            with cols[idx]:
+                try:
+                    image = Image.open(img_path)
+                    st.image(image, caption=f"Result {idx+1}", use_container_width=True)
+                except Exception as e:
+                    st.error(f"Could not load image {img_path}")
+    else:
+        st.warning("No matching objects found.")

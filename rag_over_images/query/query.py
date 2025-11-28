@@ -10,6 +10,7 @@ from unittest.mock import patch
 from transformers.dynamic_module_utils import get_imports
 from collections import deque
 from scipy.spatial.distance import cosine
+import time
 
 # Add parent directory to path to import utils
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -149,13 +150,25 @@ class RAGQuerySystem:
         else:
             print(message)
 
-    def process_query(self, query_text, log_callback=None):
-        """Process a single query with caching and logging."""
+    def process_query(self, query_text, log_callback=None, timeout=None):
+        """Process a single query with caching and logging.
+        
+        Args:
+            query_text (str): The query text.
+            log_callback (callable, optional): Function to log messages.
+            timeout (float, optional): Timeout in seconds.
+        """
+        start_time = time.time()
         self._log(f"\nProcessing query: '{query_text}'", log_callback)
 
         # 1. Generate Query Embedding
         self._log("Generating query embedding...", log_callback)
         query_emb = self.embed_model.encode(query_text).tolist()
+
+        # Check timeout
+        if timeout and (time.time() - start_time > timeout):
+            self._log("Timeout reached during embedding generation. Returning gracefully.", log_callback)
+            return []
 
         # 2. Check Cache
         self._log("Checking cache...", log_callback)
@@ -164,6 +177,11 @@ class RAGQuerySystem:
             self._log(f"--> Cache Hit! Found similar past query. Using cached results.", log_callback)
             self._display_results(cached_result, log_callback)
             return cached_result
+
+        # Check timeout
+        if timeout and (time.time() - start_time > timeout):
+            self._log("Timeout reached before retrieval. Returning gracefully.", log_callback)
+            return []
 
         # 3. Retrieval
         self._log("Retrieving top images...", log_callback)
@@ -176,6 +194,11 @@ class RAGQuerySystem:
         query_results = []
 
         for idx, img_path in enumerate(cand_paths):
+            # Check timeout before processing each image
+            if timeout and (time.time() - start_time > timeout):
+                self._log(f"Timeout reached ({timeout}s). Stopping further processing.", log_callback)
+                break
+
             self._log(f"Checking {img_path}...", log_callback)
             result = run_grounding(
                 self.florence_model, self.florence_processor, img_path, query_text
