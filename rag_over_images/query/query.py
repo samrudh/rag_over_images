@@ -8,8 +8,8 @@ from PIL import Image
 from transformers import AutoProcessor, AutoModelForCausalLM
 from unittest.mock import patch
 from transformers.dynamic_module_utils import get_imports
-import os
-
+from collections import deque
+from scipy.spatial.distance import cosine
 
 # Add parent directory to path to import utils
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -52,15 +52,12 @@ def run_grounding(model, processor, image_path, text_query):
         return None
 
     # Task prompt for Florence-2 Phrase Grounding
-    # Typical format: <CAPTION_TO_PHRASE_GROUNDING> {text_query}
-    # Or just use the task token if fine-tuned/supported.
-    # Florence-2 supports <CAPTION_TO_PHRASE_GROUNDING> or <OPEN_VOCABULARY_DETECTION>
     task_prompt = "<CAPTION_TO_PHRASE_GROUNDING>"
     prompt = task_prompt + text_query
 
     inputs = processor(text=prompt, images=image, return_tensors="pt").to(
         DEVICE, torch.float32
-    )  # float32 for cpu compatibility if needed, or stick to default
+    )
 
     generated_ids = model.generate(
         input_ids=inputs["input_ids"],
@@ -112,76 +109,107 @@ def draw_boxes(image_path, parsed_result, output_path):
     return None
 
 
-def process_query(
-    query_text, client, collection, embed_model, florence_model, florence_processor
-):
-    """Process a single query and find matching objects in images."""
-    print(f"Retrieving top images for: '{query_text}'...")
+class QueryCache:
+    def __init__(self, maxlen=10, similarity_threshold=0.85):
+        self.cache = deque(maxlen=maxlen)
+        self.threshold = similarity_threshold
 
-    # 1. Retrieval
-    query_emb = embed_model.encode(query_text).tolist()
-    results = collection.query(query_embeddings=[query_emb], n_results=3)  # Top-3
+    def find_similar(self, query_embedding):
+        """
+        Finds a cached result if the query is semantically similar.
+        Returns the cached result if found, else None.
+        """
+        for cached_emb, cached_result in self.cache:
+            # Calculate cosine similarity
+            # 1 - cosine distance = cosine similarity
+            similarity = 1 - cosine(query_embedding, cached_emb)
+            if similarity >= self.threshold:
+                return cached_result
+        return None
 
-    # results['metadatas'] is a list of lists (one per query)
-    cand_paths = [m["path"] for m in results["metadatas"][0]]
-
-    # 2. Grounding
-    print("Analyzing candidate images...")
-    found_any = False
-
-    for idx, img_path in enumerate(cand_paths):
-        print(f"Checking {img_path}...")
-        result = run_grounding(florence_model, florence_processor, img_path, query_text)
-
-        # Check if boxes exist
-        if result and "<CAPTION_TO_PHRASE_GROUNDING>" in result:
-            data = result["<CAPTION_TO_PHRASE_GROUNDING>"]
-            if data.get("bboxes"):
-                output_filename = f"reuslt_{idx}.jpg"
-                saved_path = draw_boxes(img_path, result, output_filename)
-                if saved_path:
-                    print(f"--> Match Found! Saved visualization to {saved_path}")
-                    found_any = True
-
-    if not found_any:
-        print("No matching object found in the top retrieved images.")
-    return found_any
+    def add(self, query_embedding, result):
+        """Adds a query and its result to the cache."""
+        self.cache.append((query_embedding, result))
 
 
-def main_query_loop():
-    print("Initializing Query System...")
+class RAGQuerySystem:
+    def __init__(self):
+        print("Initializing Query System...")
+        self.client = get_chroma_client()
+        self.collection = get_collection(self.client)
+        self.embed_model = get_embedding_model()
+        self.florence_model, self.florence_processor = load_florence_model()
+        self.cache = QueryCache()
+        print("System Ready.")
 
-    # Load Retrieval Resources
-    client = get_chroma_client()
-    collection = get_collection(client)
-    embed_model = get_embedding_model()
+    def _log(self, message, callback=None):
+        """Helper to log messages to callback or stdout."""
+        if callback:
+            callback(message)
+        else:
+            print(message)
 
-    # Load Grounding Resources
-    florence_model, florence_processor = load_florence_model()
+    def process_query(self, query_text, log_callback=None):
+        """Process a single query with caching and logging."""
+        self._log(f"\nProcessing query: '{query_text}'", log_callback)
 
-    print("\n--- System Ready ---")
-    print("Enter a query (e.g., 'a red car') or 'q' to quit.")
+        # 1. Generate Query Embedding
+        self._log("Generating query embedding...", log_callback)
+        query_emb = self.embed_model.encode(query_text).tolist()
 
-    while True:
-        query_text = input("\nQuery: ").strip()
-        if query_text.lower() == "q":
-            break
-        if not query_text:
-            continue
+        # 2. Check Cache
+        self._log("Checking cache...", log_callback)
+        cached_result = self.cache.find_similar(query_emb)
+        if cached_result:
+            self._log(f"--> Cache Hit! Found similar past query. Using cached results.", log_callback)
+            self._display_results(cached_result, log_callback)
+            return cached_result
 
-        process_query(
-            query_text,
-            client,
-            collection,
-            embed_model,
-            florence_model,
-            florence_processor,
-        )
+        # 3. Retrieval
+        self._log("Retrieving top images...", log_callback)
+        results = self.collection.query(query_embeddings=[query_emb], n_results=3)
+        cand_paths = [m["path"] for m in results["metadatas"][0]]
+
+        # 4. Grounding
+        self._log("Analyzing candidate images...", log_callback)
+        found_any = False
+        query_results = []
+
+        for idx, img_path in enumerate(cand_paths):
+            self._log(f"Checking {img_path}...", log_callback)
+            result = run_grounding(
+                self.florence_model, self.florence_processor, img_path, query_text
+            )
+
+            # Check if boxes exist
+            if result and "<CAPTION_TO_PHRASE_GROUNDING>" in result:
+                data = result["<CAPTION_TO_PHRASE_GROUNDING>"]
+                if data.get("bboxes"):
+                    output_filename = f"result_{idx}.jpg"
+                    saved_path = draw_boxes(img_path, result, output_filename)
+                    if saved_path:
+                        self._log(f"--> Match Found! Saved visualization to {saved_path}", log_callback)
+                        found_any = True
+                        query_results.append(saved_path)
+
+        if not found_any:
+            self._log("No matching object found in the top retrieved images.", log_callback)
+        
+        # Add to cache (even if empty, to avoid re-processing same failed query)
+        self.cache.add(query_emb, query_results)
+        return query_results
+
+    def _display_results(self, results, log_callback=None):
+        if not results:
+            self._log("Cached result was empty (no matches found previously).", log_callback)
+        else:
+            for path in results:
+                self._log(f"--> Cached Match: {path}", log_callback)
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Query images for objects using RAG",
+        description="Query images for objects using RAG with Caching",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
@@ -196,29 +224,33 @@ def main():
 
     args = parser.parse_args()
 
+    # Initialize System
+    rag_system = RAGQuerySystem()
+
     if args.query:
-        # Single query mode
-        print("Initializing Query System...")
-
-        # Load Retrieval Resources
-        client = get_chroma_client()
-        collection = get_collection(client)
-        embed_model = get_embedding_model()
-
-        # Load Grounding Resources
-        florence_model, florence_processor = load_florence_model()
-
-        process_query(
-            args.query,
-            client,
-            collection,
-            embed_model,
-            florence_model,
-            florence_processor,
-        )
+        rag_system.process_query(args.query)
     elif args.interactive:
-        # Interactive mode
-        main_query_loop()
+        print("\n--- Interactive Mode ---")
+        print("Enter a query (e.g., 'a red car') or 'q' to quit.")
+        while True:
+            query_text = input("\nQuery: ").strip()
+            if query_text.lower() == "q":
+                break
+            if not query_text:
+                continue
+            rag_system.process_query(query_text)
     else:
-        # Default to interactive if no args
-        main_query_loop()
+        # Default to interactive
+        print("\n--- Interactive Mode ---")
+        print("Enter a query (e.g., 'a red car') or 'q' to quit.")
+        while True:
+            query_text = input("\nQuery: ").strip()
+            if query_text.lower() == "q":
+                break
+            if not query_text:
+                continue
+            rag_system.process_query(query_text)
+
+
+if __name__ == "__main__":
+    main()
