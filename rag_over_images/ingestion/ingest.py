@@ -9,7 +9,14 @@ random.seed(42)
 # Add parent directory to path to import utils
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from utils import get_chroma_client, get_collection, get_embedding_model
+from utils import (
+    get_chroma_client,
+    get_collection,
+    get_embedding_model,
+    get_caption_model,
+    get_text_embedding_model,
+    get_caption_collection,
+)
 
 INPUT_DIR = "./data/train"
 SUPPORTED_EXTS = (".jpg", ".jpeg", ".png", ".bmp", ".webp")
@@ -47,12 +54,22 @@ def ingest_images(input_dir=INPUT_DIR, n_images=N_IMAGES):
     client = get_chroma_client()
     collection = get_collection(client)
     model = get_embedding_model()
+    
+    # Initialize captioning resources
+    print("Loading captioning models...")
+    caption_processor, caption_model = get_caption_model()
+    text_embedding_model = get_text_embedding_model()
+    caption_collection = get_caption_collection(client)
 
     print("Model loaded. Starting ingestion...")
 
     ids = []
     embeddings = []
     metadatas = []
+    
+    caption_ids = []
+    caption_embeddings = []
+    caption_metadatas = []
 
     for img_file in tqdm(image_files, desc="Processing Images"):
         img_path = os.path.join(input_dir, img_file)
@@ -69,13 +86,33 @@ def ingest_images(input_dir=INPUT_DIR, n_images=N_IMAGES):
             embeddings.append(embedding)
             metadatas.append({"path": img_path})
 
+            # Generate caption
+            inputs = caption_processor(image, return_tensors="pt")
+            out = caption_model.generate(**inputs)
+            caption = caption_processor.decode(out[0], skip_special_tokens=True)
+            
+            # Generate caption embedding
+            caption_embedding = text_embedding_model.encode(caption).tolist()
+            
+            caption_ids.append(img_file)
+            caption_embeddings.append(caption_embedding)
+            caption_metadatas.append({"path": img_path, "caption": caption})
+
         except Exception as e:
             print(f"Error processing {img_file}: {e}")
 
     if ids:
         print("Upserting to Vector DB...")
         collection.upsert(ids=ids, embeddings=embeddings, metadatas=metadatas)
-        print(f"Successfully ingested {len(ids)} images.")
+        print(f"Successfully ingested {len(ids)} images into image collection.")
+        
+        print("Upserting to Caption DB...")
+        caption_collection.upsert(
+            ids=caption_ids,
+            embeddings=caption_embeddings,
+            metadatas=caption_metadatas
+        )
+        print(f"Successfully ingested {len(caption_ids)} captions.")
     else:
         print("No valid images processed.")
 

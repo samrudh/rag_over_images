@@ -15,7 +15,13 @@ import time
 # Add parent directory to path to import utils
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from utils import get_chroma_client, get_collection, get_embedding_model
+from utils import (
+    get_chroma_client,
+    get_collection,
+    get_embedding_model,
+    get_text_embedding_model,
+    get_caption_collection,
+)
 
 FLORENCE_MODEL_ID = "microsoft/Florence-2-base-ft"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -31,15 +37,20 @@ def fixed_get_imports(filename: str | os.PathLike) -> list[str]:
 
 
 def load_florence_model():
-    print(f"Loading Florence-2 model ({FLORENCE_MODEL_ID})...")
-    # trust_remote_code=True is required for Florence-2
-    with patch("transformers.dynamic_module_utils.get_imports", fixed_get_imports):
-        model = AutoModelForCausalLM.from_pretrained(
-            FLORENCE_MODEL_ID,
-            trust_remote_code=True,
-        ).to(DEVICE)
-    processor = AutoProcessor.from_pretrained(FLORENCE_MODEL_ID, trust_remote_code=True)
-    return model, processor
+    try:
+        print(f"Loading Florence-2 model ({FLORENCE_MODEL_ID})...")
+        # trust_remote_code=True is required for Florence-2
+        with patch("transformers.dynamic_module_utils.get_imports", fixed_get_imports):
+            model = AutoModelForCausalLM.from_pretrained(
+                FLORENCE_MODEL_ID,
+                trust_remote_code=True,
+            ).to(DEVICE)
+        processor = AutoProcessor.from_pretrained(FLORENCE_MODEL_ID, trust_remote_code=True)
+        return model, processor
+    except Exception as e:
+        print(f"Warning: Failed to load Florence-2 model: {e}")
+        print("Grounding will be disabled.")
+        return None, None
 
 
 def run_grounding(model, processor, image_path, text_query):
@@ -138,7 +149,9 @@ class RAGQuerySystem:
         print("Initializing Query System...")
         self.client = get_chroma_client()
         self.collection = get_collection(self.client)
+        self.caption_collection = get_caption_collection(self.client)
         self.embed_model = get_embedding_model()
+        self.text_embed_model = get_text_embedding_model()
         self.florence_model, self.florence_processor = load_florence_model()
         self.cache = QueryCache()
         print("System Ready.")
@@ -164,6 +177,7 @@ class RAGQuerySystem:
         # 1. Generate Query Embedding
         self._log("Generating query embedding...", log_callback)
         query_emb = self.embed_model.encode(query_text).tolist()
+        query_text_emb = self.text_embed_model.encode(query_text).tolist()
 
         # Check timeout
         if timeout and (time.time() - start_time > timeout):
@@ -185,8 +199,20 @@ class RAGQuerySystem:
 
         # 3. Retrieval
         self._log("Retrieving top images...", log_callback)
-        results = self.collection.query(query_embeddings=[query_emb], n_results=3)
-        cand_paths = [m["path"] for m in results["metadatas"][0]]
+        
+        # Visual Search
+        visual_results = self.collection.query(query_embeddings=[query_emb], n_results=3)
+        visual_paths = [m["path"] for m in visual_results["metadatas"][0]]
+        self._log(f"Visual Search found: {len(visual_paths)} images", log_callback)
+
+        # Caption Search
+        caption_results = self.caption_collection.query(query_embeddings=[query_text_emb], n_results=3)
+        caption_paths = [m["path"] for m in caption_results["metadatas"][0]]
+        self._log(f"Caption Search found: {len(caption_paths)} images", log_callback)
+
+        # Merge results (deduplicate)
+        cand_paths = list(set(visual_paths + caption_paths))
+        self._log(f"Total unique candidates: {len(cand_paths)}", log_callback)
 
         # 4. Grounding
         self._log("Analyzing candidate images...", log_callback)
@@ -198,6 +224,10 @@ class RAGQuerySystem:
             if timeout and (time.time() - start_time > timeout):
                 self._log(f"Timeout reached ({timeout}s). Stopping further processing.", log_callback)
                 break
+
+            if self.florence_model is None:
+                self._log("Grounding model not available. Skipping.", log_callback)
+                continue
 
             self._log(f"Checking {img_path}...", log_callback)
             result = run_grounding(
