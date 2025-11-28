@@ -4,6 +4,7 @@ import argparse
 from PIL import Image
 from tqdm import tqdm
 import random
+import time
 
 random.seed(42)
 # Add parent directory to path to import utils
@@ -16,17 +17,20 @@ from utils import (
     get_caption_model,
     get_text_embedding_model,
     get_caption_collection,
+    clear_collection,
+    manage_collection_limit,
 )
 
 INPUT_DIR = "./data/train"
 SUPPORTED_EXTS = (".jpg", ".jpeg", ".png", ".bmp", ".webp")
 
-N_IMAGES = 1000
+N_IMAGES = 100
 
 
-def ingest_images(input_dir=INPUT_DIR, n_images=N_IMAGES):
+def ingest_images(input_dir=INPUT_DIR, n_images=N_IMAGES, progress_callback=None, mode="append"):
     """
     Reads images from input_dir, generates embeddings, and stores them in ChromaDB.
+    mode: "clean" (wipe DB first) or "append" (add to existing, maintain limit)
     """
     # Create input dir if it doesn't exist (for demo purposes)
     if not os.path.exists(input_dir):
@@ -41,17 +45,28 @@ def ingest_images(input_dir=INPUT_DIR, n_images=N_IMAGES):
     ]
 
     # Randomly take n_images images, but not more than available
-    n_images = min(n_images, len(image_files))
-    image_files = random.sample(image_files, n_images)
+    if len(image_files) <= n_images:
+        print(f"Found {len(image_files)} images. Ingesting all of them.")
+        # No need to sample, just take all
+    else:
+        print(f"Found {len(image_files)} images. Sampling {n_images} random images.")
+        image_files = random.sample(image_files, n_images)
 
-    if not image_files:
-        print(f"No images found in {input_dir}. Please add some images.")
-        return
-
-    print(f"Found {len(image_files)} images. Loading model...")
+    print("Loading model...")
 
     # Initialize resources
     client = get_chroma_client()
+    
+    # Handle Modes
+    if mode == "clean":
+        print("Mode: Clean & Ingest. Clearing collection...")
+        clear_collection(client)
+    elif mode == "append":
+        print("Mode: Append. Checking limits...")
+        # We need to know how many we are about to add
+        # But we haven't filtered the list yet (we did sample, but let's be safe)
+        manage_collection_limit(client, limit=1000, new_count=len(image_files))
+
     collection = get_collection(client)
     model = get_embedding_model()
     
@@ -71,7 +86,11 @@ def ingest_images(input_dir=INPUT_DIR, n_images=N_IMAGES):
     caption_embeddings = []
     caption_metadatas = []
 
-    for img_file in tqdm(image_files, desc="Processing Images"):
+    total_files = len(image_files)
+    for idx, img_file in enumerate(tqdm(image_files, desc="Processing Images")):
+        if progress_callback:
+            progress_callback(idx, total_files, f"Processing {img_file}")
+            
         img_path = os.path.join(input_dir, img_file)
 
         try:
@@ -80,23 +99,28 @@ def ingest_images(input_dir=INPUT_DIR, n_images=N_IMAGES):
 
             # Generate embedding
             # sentence-transformers encode supports PIL images
-            embedding = model.encode(image).tolist()
+            embedding = model.encode(image, normalize_embeddings=True).tolist()
 
             ids.append(img_file)
             embeddings.append(embedding)
-            metadatas.append({"path": img_path})
+            # Add timestamp for FIFO
+            metadatas.append({"path": img_path, "timestamp": time.time()})
 
             # Generate caption
             inputs = caption_processor(image, return_tensors="pt")
             out = caption_model.generate(**inputs)
             caption = caption_processor.decode(out[0], skip_special_tokens=True)
             
+            if progress_callback:
+                progress_callback(idx, total_files, f"Processing {img_file}\nCaption: {caption}")
+            
             # Generate caption embedding
-            caption_embedding = text_embedding_model.encode(caption).tolist()
+            caption_embedding = text_embedding_model.encode(caption, normalize_embeddings=True).tolist()
             
             caption_ids.append(img_file)
             caption_embeddings.append(caption_embedding)
-            caption_metadatas.append({"path": img_path, "caption": caption})
+            # Add timestamp for FIFO
+            caption_metadatas.append({"path": img_path, "caption": caption, "timestamp": time.time()})
 
         except Exception as e:
             print(f"Error processing {img_file}: {e}")

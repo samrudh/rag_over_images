@@ -163,21 +163,23 @@ class RAGQuerySystem:
         else:
             print(message)
 
-    def process_query(self, query_text, log_callback=None, timeout=None):
+    def process_query(self, query_text, log_callback=None, timeout=None, visual_threshold=0.6, caption_threshold=0.6):
         """Process a single query with caching and logging.
         
         Args:
             query_text (str): The query text.
             log_callback (callable, optional): Function to log messages.
             timeout (float, optional): Timeout in seconds.
+            visual_threshold (float): Minimum similarity for visual matches (0-1).
+            caption_threshold (float): Minimum similarity for caption matches (0-1).
         """
         start_time = time.time()
         self._log(f"\nProcessing query: '{query_text}'", log_callback)
 
         # 1. Generate Query Embedding
         self._log("Generating query embedding...", log_callback)
-        query_emb = self.embed_model.encode(query_text).tolist()
-        query_text_emb = self.text_embed_model.encode(query_text).tolist()
+        query_emb = self.embed_model.encode(query_text, normalize_embeddings=True).tolist()
+        query_text_emb = self.text_embed_model.encode(query_text, normalize_embeddings=True).tolist()
 
         # Check timeout
         if timeout and (time.time() - start_time > timeout):
@@ -201,14 +203,33 @@ class RAGQuerySystem:
         self._log("Retrieving top images...", log_callback)
         
         # Visual Search
-        visual_results = self.collection.query(query_embeddings=[query_emb], n_results=3)
-        visual_paths = [m["path"] for m in visual_results["metadatas"][0]]
-        self._log(f"Visual Search found: {len(visual_paths)} images", log_callback)
+        # Fetch more results (10) to allow for filtering
+        visual_results = self.collection.query(query_embeddings=[query_emb], n_results=10)
+        
+        visual_paths = []
+        if visual_results["metadatas"] and visual_results["distances"]:
+            for meta, dist in zip(visual_results["metadatas"][0], visual_results["distances"][0]):
+                similarity = 1 - dist
+                if similarity >= visual_threshold:
+                    visual_paths.append(meta["path"])
+                else:
+                    self._log(f"Filtered out visual match (Sim: {similarity:.2f} < {visual_threshold})", log_callback)
+        
+        self._log(f"Visual Search found: {len(visual_paths)} images (after filtering)", log_callback)
 
         # Caption Search
-        caption_results = self.caption_collection.query(query_embeddings=[query_text_emb], n_results=3)
-        caption_paths = [m["path"] for m in caption_results["metadatas"][0]]
-        self._log(f"Caption Search found: {len(caption_paths)} images", log_callback)
+        caption_results = self.caption_collection.query(query_embeddings=[query_text_emb], n_results=10)
+        
+        caption_paths = []
+        if caption_results["metadatas"] and caption_results["distances"]:
+            for meta, dist in zip(caption_results["metadatas"][0], caption_results["distances"][0]):
+                similarity = 1 - dist
+                if similarity >= caption_threshold:
+                    caption_paths.append(meta["path"])
+                else:
+                    self._log(f"Filtered out caption match (Sim: {similarity:.2f} < {caption_threshold})", log_callback)
+
+        self._log(f"Caption Search found: {len(caption_paths)} images (after filtering)", log_callback)
 
         # Merge results (deduplicate)
         cand_paths = list(set(visual_paths + caption_paths))
