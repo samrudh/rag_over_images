@@ -2,6 +2,13 @@
 
 A clever computer vision system that helps you find specific objects in your photo collection using natural language queries. Think of it as having a smart assistant that can locate "the red car" or "a store sign" in hundreds of images without you manually searching through them. Perfect for organizing personal photos or exploring datasets in a fun, interactive way!
 
+## Key Features
+- **Semantic Query Caching**: Instantly returns results for similar past queries (e.g., "red car" hits cache for "a red car").
+- **Smart Load Management**: Search button automatically disables during processing to prevent database overload and double submissions.
+- **Observability**: "Verbose Mode" toggle in the UI provides real-time logs of the RAG pipeline (embedding, retrieval, grounding).
+- **Graceful Timeouts**: Queries exceeding 10 seconds are handled gracefully to ensure system responsiveness.
+
+
 ## Installation Instructions
 
 ### Prerequisites
