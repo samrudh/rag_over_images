@@ -65,8 +65,8 @@ The query process retrieves relevant images using multi-modal similarity and per
    - Check query cache for semantically similar previous queries (using cosine similarity > 0.85 threshold)
 
 2. **Retrieval Phase**:
-   - **Visual Search**: Query the image collection for top 10 visual matches using CLIP embedding, filter results by visual similarity threshold (default 0.6)
-   - **Caption Search**: Query the caption collection for top 10 matches using text embedding, filter results by caption similarity threshold (default 0.6)
+   - **Visual Search**: Query the image collection for top 10 visual matches using CLIP embedding, filter results by visual similarity threshold (default 0.25)
+   - **Caption Search**: Query the caption collection for top 10 matches using text embedding, filter results by caption similarity threshold (default 0.25)
    - Merge results from both searches, removing duplicates, tracking source (Visual/Caption/Both)
 
 3. **Grounding Phase (Florence-2 Object Detection)**:
