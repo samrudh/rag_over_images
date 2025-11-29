@@ -285,7 +285,7 @@ with st.form("query_form"):
             "Visual Similarity Control",
             0.0,
             1.0,
-            0.6,
+            0.25,
             0.05,
             help="Minimum similarity for VLM matches",
         )
@@ -294,7 +294,7 @@ with st.form("query_form"):
             "Caption Similarity Control",
             0.0,
             1.0,
-            0.6,
+            0.25,
             0.05,
             help="Minimum similarity for Caption matches",
         )
