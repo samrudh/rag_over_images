@@ -1,0 +1,15 @@
+torch>=2.0.0
+torchvision
+transformers==4.41.2
+sentence-transformers
+timm
+einops
+accelerate
+chromadb>=0.4.0
+Pillow
+opencv-python-headless
+streamlit
+tqdm
+scipy
+numpy
+google-generativeai
