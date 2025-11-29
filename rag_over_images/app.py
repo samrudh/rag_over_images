@@ -9,6 +9,9 @@ import time
 from utils import get_chroma_client, get_collection, get_embedding_model, get_collection_count
 from query.query import RAGQuerySystem
 from ingestion.ingest import ingest_images, SUPPORTED_EXTS
+import LLM
+import json
+import random
 
 # Constants
 DATA_DIR = "./data/train"
@@ -35,6 +38,9 @@ if "search_running" not in st.session_state:
 st.sidebar.header("System Status")
 if "resources_loaded" not in st.session_state:
     st.session_state["resources_loaded"] = False
+
+if "system_logs" not in st.session_state:
+    st.session_state.system_logs = []
 
 
 @st.cache_resource
@@ -75,6 +81,27 @@ verbose_mode = st.sidebar.toggle(
     value=False,
     disabled=st.session_state.search_running
 )
+
+if verbose_mode:
+    st.sidebar.markdown("### System Logs")
+    log_container = st.sidebar.empty()
+    if st.session_state.system_logs:
+        # Show last 50 lines to keep it clean
+        log_container.code("\n".join(st.session_state.system_logs[-50:]))
+    else:
+        log_container.info("No logs yet.")
+else:
+    log_container = None
+
+# Smart Query Suggestions Control
+st.sidebar.markdown("---")
+st.sidebar.header("Smart Features")
+use_smart_suggestions = st.sidebar.toggle("Enable Smart Query Suggestions", value=False)
+gemini_api_key = ""
+if use_smart_suggestions:
+    gemini_api_key = st.sidebar.text_input("Gemini API Key", type="password")
+    if not gemini_api_key:
+        st.sidebar.warning("API Key required for suggestions")
 
 
 # --- Ingestion Section ---
@@ -125,10 +152,19 @@ if clean_ingest or append_ingest:
     progress_bar = st.progress(0)
     status_text = st.empty()
     
+    # Run Ingestion
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
     def update_progress(current, total, message):
         progress = min(current / total, 1.0)
         progress_bar.progress(progress)
-        status_text.text(f"{message} ({current}/{total})")
+        status_text.text(f"Processing... ({current}/{total})")
+        
+        # Add to logs
+        st.session_state.system_logs.append(message)
+        if verbose_mode and log_container:
+             log_container.code("\n".join(st.session_state.system_logs[-50:]))
 
     with st.spinner(f"Ingesting images ({mode} mode)..."):
         ingest_images(
@@ -141,6 +177,41 @@ if clean_ingest or append_ingest:
     progress_bar.progress(1.0)
     status_text.text("Ingestion Complete!")
     st.success("Ingestion Complete!")
+
+    # Generate Smart Suggestions if enabled
+    if use_smart_suggestions and gemini_api_key:
+        with st.spinner("Generating smart query suggestions..."):
+            st.session_state.system_logs.append("\n--- Smart Query Suggestions ---")
+            st.session_state.system_logs.append("LLM smart query suggestion process start")
+            if verbose_mode and log_container:
+                 log_container.code("\n".join(st.session_state.system_logs[-50:]))
+            
+            try:
+                # Fetch captions from DB
+                client = get_chroma_client()
+                caption_collection = client.get_collection("image_captions")
+                # Get all captions (limit to reasonable amount if needed, but here we take all)
+                results = caption_collection.get(include=["metadatas"])
+                captions = [m["caption"] for m in results["metadatas"] if "caption" in m]
+                
+                if captions:
+                    suggestions = LLM.generate_query_suggestions(captions, gemini_api_key)
+                    if suggestions:
+                        # Save to file
+                        with open("data/suggested_queries.json", "w") as f:
+                            json.dump(suggestions, f)
+                        
+                        st.session_state.system_logs.append(f"LLM smart query suggestion process complete.")
+                        st.session_state.system_logs.append(f"Generated {len(suggestions)} suggestions.")
+                        st.session_state.system_logs.append(f"Examples: {', '.join(suggestions[:3])}...")
+                        if verbose_mode and log_container:
+                             log_container.code("\n".join(st.session_state.system_logs[-50:]))
+                        
+                        st.success(f"Generated {len(suggestions)} smart suggestions!")
+                else:
+                    st.warning("No captions found to generate suggestions.")
+            except Exception as e:
+                st.error(f"Failed to generate suggestions: {e}")
     
     # Clear cache to ensure RAG system reloads with new collection
     st.cache_resource.clear()
@@ -156,13 +227,31 @@ st.header("2. Query Images")
 
 if "search_results" not in st.session_state:
     st.session_state.search_results = None
-if "search_logs" not in st.session_state:
-    st.session_state.search_logs = []
+if "search_results" not in st.session_state:
+    st.session_state.search_results = None
 
 def start_search():
     st.session_state.search_running = True
 
 with st.form("query_form"):
+    # Load and display suggestions
+    suggestions_file = "data/suggested_queries.json"
+    if os.path.exists(suggestions_file):
+        try:
+            with open(suggestions_file, "r") as f:
+                all_suggestions = json.load(f)
+            if all_suggestions:
+                # Pick 3-4 random suggestions
+                random_suggestions = random.sample(all_suggestions, min(4, len(all_suggestions)))
+                st.markdown("**Try these queries:**")
+                
+                # Create a string of pills or just text
+                # Streamlit pills are new, but let's use markdown for compatibility
+                suggestion_text = " | ".join([f"`{s}`" for s in random_suggestions])
+                st.markdown(suggestion_text)
+        except Exception as e:
+            pass # Ignore errors in loading suggestions
+
     query_text = st.text_input("Enter your query (e.g., 'a red car')")
     
     # Similarity Threshold Sliders
@@ -188,12 +277,12 @@ if search_submitted:
         st.session_state.search_logs = []
         
         # Container for logs (temporary for this run)
-        log_container = st.empty()
+        # log_container = st.empty() # Removed in favor of sidebar
         
         def log_to_ui(message):
-            st.session_state.search_logs.append(message)
-            if verbose_mode:
-                log_container.code("\n".join(st.session_state.search_logs))
+            st.session_state.system_logs.append(message)
+            if verbose_mode and log_container:
+                log_container.code("\n".join(st.session_state.system_logs[-50:]))
 
         with st.spinner("Searching..."):
             try:
@@ -219,9 +308,9 @@ if search_submitted:
 
 # Display Results (Persistent)
 if st.session_state.search_results is not None:
-    # Re-display logs if verbose
-    if verbose_mode and st.session_state.search_logs:
-        st.code("\n".join(st.session_state.search_logs))
+    # Re-display logs if verbose - ALREADY IN SIDEBAR
+    # if verbose_mode and st.session_state.search_logs:
+    #     st.code("\n".join(st.session_state.search_logs))
 
     results = st.session_state.search_results
     if results:

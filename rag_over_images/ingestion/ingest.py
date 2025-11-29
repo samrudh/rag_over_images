@@ -100,6 +100,8 @@ def ingest_images(input_dir=INPUT_DIR, n_images=N_IMAGES, progress_callback=None
             # Generate embedding
             # sentence-transformers encode supports PIL images
             embedding = model.encode(image, normalize_embeddings=True).tolist()
+            if progress_callback:
+                progress_callback(idx, total_files, f"Generated embedding for {img_file}")
 
             ids.append(img_file)
             embeddings.append(embedding)
@@ -112,7 +114,7 @@ def ingest_images(input_dir=INPUT_DIR, n_images=N_IMAGES, progress_callback=None
             caption = caption_processor.decode(out[0], skip_special_tokens=True)
             
             if progress_callback:
-                progress_callback(idx, total_files, f"Processing {img_file}\nCaption: {caption}")
+                progress_callback(idx, total_files, f"Generated caption for {img_file}: {caption}")
             
             # Generate caption embedding
             caption_embedding = text_embedding_model.encode(caption, normalize_embeddings=True).tolist()
@@ -127,10 +129,14 @@ def ingest_images(input_dir=INPUT_DIR, n_images=N_IMAGES, progress_callback=None
 
     if ids:
         print("Upserting to Vector DB...")
+        if progress_callback:
+            progress_callback(total_files, total_files, f"Upserting {len(ids)} images to Vector DB...")
         collection.upsert(ids=ids, embeddings=embeddings, metadatas=metadatas)
         print(f"Successfully ingested {len(ids)} images into image collection.")
         
         print("Upserting to Caption DB...")
+        if progress_callback:
+            progress_callback(total_files, total_files, f"Upserting {len(caption_ids)} captions to Vector DB...")
         caption_collection.upsert(
             ids=caption_ids,
             embeddings=caption_embeddings,
