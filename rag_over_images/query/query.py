@@ -45,7 +45,9 @@ def load_florence_model():
                 FLORENCE_MODEL_ID,
                 trust_remote_code=True,
             ).to(DEVICE)
-        processor = AutoProcessor.from_pretrained(FLORENCE_MODEL_ID, trust_remote_code=True)
+        processor = AutoProcessor.from_pretrained(
+            FLORENCE_MODEL_ID, trust_remote_code=True
+        )
         return model, processor
     except Exception as e:
         print(f"Warning: Failed to load Florence-2 model: {e}")
@@ -163,9 +165,16 @@ class RAGQuerySystem:
         else:
             print(message)
 
-    def process_query(self, query_text, log_callback=None, timeout=None, visual_threshold=0.6, caption_threshold=0.6):
+    def process_query(
+        self,
+        query_text,
+        log_callback=None,
+        timeout=None,
+        visual_threshold=0.6,
+        caption_threshold=0.6,
+    ):
         """Process a single query with caching and logging.
-        
+
         Args:
             query_text (str): The query text.
             log_callback (callable, optional): Function to log messages.
@@ -178,70 +187,102 @@ class RAGQuerySystem:
 
         # 1. Generate Query Embedding
         self._log("Generating query embedding...", log_callback)
-        query_emb = self.embed_model.encode(query_text, normalize_embeddings=True).tolist()
-        query_text_emb = self.text_embed_model.encode(query_text, normalize_embeddings=True).tolist()
+        query_emb = self.embed_model.encode(
+            query_text, normalize_embeddings=True
+        ).tolist()
+        query_text_emb = self.text_embed_model.encode(
+            query_text, normalize_embeddings=True
+        ).tolist()
 
         # Check timeout
         if timeout and (time.time() - start_time > timeout):
-            self._log("Timeout reached during embedding generation. Returning gracefully.", log_callback)
+            self._log(
+                "Timeout reached during embedding generation. Returning gracefully.",
+                log_callback,
+            )
             return []
 
         # 2. Check Cache
         self._log("Checking cache...", log_callback)
         cached_result = self.cache.find_similar(query_emb)
         if cached_result:
-            self._log(f"--> Cache Hit! Found similar past query. Using cached results.", log_callback)
+            self._log(
+                f"--> Cache Hit! Found similar past query. Using cached results.",
+                log_callback,
+            )
             self._display_results(cached_result, log_callback)
             return cached_result
 
         # Check timeout
         if timeout and (time.time() - start_time > timeout):
-            self._log("Timeout reached before retrieval. Returning gracefully.", log_callback)
+            self._log(
+                "Timeout reached before retrieval. Returning gracefully.", log_callback
+            )
             return []
 
         # 3. Retrieval
         self._log("Retrieving top images...", log_callback)
-        
+
         # Visual Search
         # Fetch more results (10) to allow for filtering
-        visual_results = self.collection.query(query_embeddings=[query_emb], n_results=10)
-        
+        visual_results = self.collection.query(
+            query_embeddings=[query_emb], n_results=3
+        )
+
         visual_paths = []
         if visual_results["metadatas"] and visual_results["distances"]:
-            for meta, dist in zip(visual_results["metadatas"][0], visual_results["distances"][0]):
+            for meta, dist in zip(
+                visual_results["metadatas"][0], visual_results["distances"][0]
+            ):
                 similarity = 1 - dist
                 if similarity >= visual_threshold:
                     visual_paths.append(meta["path"])
                 else:
-                    self._log(f"Filtered out visual match (Sim: {similarity:.2f} < {visual_threshold})", log_callback)
-        
-        self._log(f"Visual Search found: {len(visual_paths)} images (after filtering)", log_callback)
+                    self._log(
+                        f"Filtered out visual match (Sim: {similarity:.2f} < {visual_threshold})",
+                        log_callback,
+                    )
+
+        self._log(
+            f"Visual Search found: {len(visual_paths)} images (after filtering)",
+            log_callback,
+        )
 
         # Caption Search
-        caption_results = self.caption_collection.query(query_embeddings=[query_text_emb], n_results=10)
-        
+        caption_results = self.caption_collection.query(
+            query_embeddings=[query_text_emb], n_results=3
+        )
+
         caption_paths = []
         if caption_results["metadatas"] and caption_results["distances"]:
-            for meta, dist in zip(caption_results["metadatas"][0], caption_results["distances"][0]):
+            for meta, dist in zip(
+                caption_results["metadatas"][0], caption_results["distances"][0]
+            ):
                 similarity = 1 - dist
                 if similarity >= caption_threshold:
                     caption_paths.append(meta["path"])
                 else:
-                    self._log(f"Filtered out caption match (Sim: {similarity:.2f} < {caption_threshold})", log_callback)
+                    self._log(
+                        f"Filtered out caption match (Sim: {similarity:.2f} < {caption_threshold})",
+                        log_callback,
+                    )
 
-        self._log(f"Caption Search found: {len(caption_paths)} images (after filtering)", log_callback)
+        self._log(
+            f"Caption Search found: {len(caption_paths)} images (after filtering)",
+            log_callback,
+        )
 
         # Merge results (deduplicate) and track source
         candidates = {}
         for p in visual_paths:
             candidates[p] = "Visual"
-        
+
         for p in caption_paths:
             if p in candidates:
                 candidates[p] = "Visual + Caption"
             else:
                 candidates[p] = "Caption"
-        
+
         cand_paths = list(candidates.keys())
         self._log(f"Total unique candidates: {len(cand_paths)}", log_callback)
 
@@ -253,7 +294,10 @@ class RAGQuerySystem:
         for idx, img_path in enumerate(cand_paths):
             # Check timeout before processing each image
             if timeout and (time.time() - start_time > timeout):
-                self._log(f"Timeout reached ({timeout}s). Stopping further processing.", log_callback)
+                self._log(
+                    f"Timeout reached ({timeout}s). Stopping further processing.",
+                    log_callback,
+                )
                 break
 
             if self.florence_model is None:
@@ -272,27 +316,35 @@ class RAGQuerySystem:
                     output_filename = f"result_{idx}.jpg"
                     saved_path = draw_boxes(img_path, result, output_filename)
                     if saved_path:
-                        self._log(f"--> Match Found! Saved visualization to {saved_path}", log_callback)
+                        self._log(
+                            f"--> Match Found! Saved visualization to {saved_path}",
+                            log_callback,
+                        )
                         found_any = True
                         # Store path and source
-                        query_results.append({
-                            "path": saved_path,
-                            "source": candidates[img_path]
-                        })
+                        query_results.append(
+                            {"path": saved_path, "source": candidates[img_path]}
+                        )
 
         if not found_any:
-            self._log("No matching object found in the top retrieved images.", log_callback)
-        
+            self._log(
+                "No matching object found in the top retrieved images.", log_callback
+            )
+
         # Add to cache (even if empty, to avoid re-processing same failed query)
         self.cache.add(query_emb, query_results)
         return query_results
 
     def _display_results(self, results, log_callback=None):
         if not results:
-            self._log("Cached result was empty (no matches found previously).", log_callback)
+            self._log(
+                "Cached result was empty (no matches found previously).", log_callback
+            )
         else:
             for item in results:
-                self._log(f"--> Cached Match: {item['path']} ({item['source']})", log_callback)
+                self._log(
+                    f"--> Cached Match: {item['path']} ({item['source']})", log_callback
+                )
 
 
 def main():

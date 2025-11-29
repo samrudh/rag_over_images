@@ -27,7 +27,9 @@ SUPPORTED_EXTS = (".jpg", ".jpeg", ".png", ".bmp", ".webp")
 N_IMAGES = 100
 
 
-def ingest_images(input_dir=INPUT_DIR, n_images=N_IMAGES, progress_callback=None, mode="append"):
+def ingest_images(
+    input_dir=INPUT_DIR, n_images=N_IMAGES, progress_callback=None, mode="append"
+):
     """
     Reads images from input_dir, generates embeddings, and stores them in ChromaDB.
     mode: "clean" (wipe DB first) or "append" (add to existing, maintain limit)
@@ -56,7 +58,7 @@ def ingest_images(input_dir=INPUT_DIR, n_images=N_IMAGES, progress_callback=None
 
     # Initialize resources
     client = get_chroma_client()
-    
+
     # Handle Modes
     if mode == "clean":
         print("Mode: Clean & Ingest. Clearing collection...")
@@ -69,7 +71,7 @@ def ingest_images(input_dir=INPUT_DIR, n_images=N_IMAGES, progress_callback=None
 
     collection = get_collection(client)
     model = get_embedding_model()
-    
+
     # Initialize captioning resources
     print("Loading captioning models...")
     caption_processor, caption_model = get_caption_model()
@@ -81,7 +83,7 @@ def ingest_images(input_dir=INPUT_DIR, n_images=N_IMAGES, progress_callback=None
     ids = []
     embeddings = []
     metadatas = []
-    
+
     caption_ids = []
     caption_embeddings = []
     caption_metadatas = []
@@ -90,7 +92,7 @@ def ingest_images(input_dir=INPUT_DIR, n_images=N_IMAGES, progress_callback=None
     for idx, img_file in enumerate(tqdm(image_files, desc="Processing Images")):
         if progress_callback:
             progress_callback(idx, total_files, f"Processing {img_file}")
-            
+
         img_path = os.path.join(input_dir, img_file)
 
         try:
@@ -101,7 +103,9 @@ def ingest_images(input_dir=INPUT_DIR, n_images=N_IMAGES, progress_callback=None
             # sentence-transformers encode supports PIL images
             embedding = model.encode(image, normalize_embeddings=True).tolist()
             if progress_callback:
-                progress_callback(idx, total_files, f"Generated embedding for {img_file}")
+                progress_callback(
+                    idx, total_files, f"Generated embedding for {img_file}"
+                )
 
             ids.append(img_file)
             embeddings.append(embedding)
@@ -112,17 +116,23 @@ def ingest_images(input_dir=INPUT_DIR, n_images=N_IMAGES, progress_callback=None
             inputs = caption_processor(image, return_tensors="pt")
             out = caption_model.generate(**inputs)
             caption = caption_processor.decode(out[0], skip_special_tokens=True)
-            
+
             if progress_callback:
-                progress_callback(idx, total_files, f"Generated caption for {img_file}: {caption}")
-            
+                progress_callback(
+                    idx, total_files, f"Generated caption for {img_file}: {caption}"
+                )
+
             # Generate caption embedding
-            caption_embedding = text_embedding_model.encode(caption, normalize_embeddings=True).tolist()
-            
+            caption_embedding = text_embedding_model.encode(
+                caption, normalize_embeddings=True
+            ).tolist()
+
             caption_ids.append(img_file)
             caption_embeddings.append(caption_embedding)
             # Add timestamp for FIFO
-            caption_metadatas.append({"path": img_path, "caption": caption, "timestamp": time.time()})
+            caption_metadatas.append(
+                {"path": img_path, "caption": caption, "timestamp": time.time()}
+            )
 
         except Exception as e:
             print(f"Error processing {img_file}: {e}")
@@ -130,17 +140,21 @@ def ingest_images(input_dir=INPUT_DIR, n_images=N_IMAGES, progress_callback=None
     if ids:
         print("Upserting to Vector DB...")
         if progress_callback:
-            progress_callback(total_files, total_files, f"Upserting {len(ids)} images to Vector DB...")
+            progress_callback(
+                total_files, total_files, f"Upserting {len(ids)} images to Vector DB..."
+            )
         collection.upsert(ids=ids, embeddings=embeddings, metadatas=metadatas)
         print(f"Successfully ingested {len(ids)} images into image collection.")
-        
+
         print("Upserting to Caption DB...")
         if progress_callback:
-            progress_callback(total_files, total_files, f"Upserting {len(caption_ids)} captions to Vector DB...")
+            progress_callback(
+                total_files,
+                total_files,
+                f"Upserting {len(caption_ids)} captions to Vector DB...",
+            )
         caption_collection.upsert(
-            ids=caption_ids,
-            embeddings=caption_embeddings,
-            metadatas=caption_metadatas
+            ids=caption_ids, embeddings=caption_embeddings, metadatas=caption_metadatas
         )
         print(f"Successfully ingested {len(caption_ids)} captions.")
     else:

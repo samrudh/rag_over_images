@@ -27,14 +27,18 @@ def get_collection(client):
     """
     Get or create the collection for image embeddings.
     """
-    return client.get_or_create_collection(name=COLLECTION_NAME, metadata={"hnsw:space": "cosine"})
+    return client.get_or_create_collection(
+        name=COLLECTION_NAME, metadata={"hnsw:space": "cosine"}
+    )
 
 
 def get_caption_collection(client):
     """
     Get or create the collection for image captions.
     """
-    return client.get_or_create_collection(name=CAPTION_COLLECTION_NAME, metadata={"hnsw:space": "cosine"})
+    return client.get_or_create_collection(
+        name=CAPTION_COLLECTION_NAME, metadata={"hnsw:space": "cosine"}
+    )
 
 
 def get_embedding_model():
@@ -79,7 +83,7 @@ def clear_collection(client):
         client.delete_collection(CAPTION_COLLECTION_NAME)
     except ValueError:
         pass  # Collections might not exist
-    
+
     # Recreate
     get_collection(client)
     get_caption_collection(client)
@@ -91,33 +95,33 @@ def manage_collection_limit(client, limit, new_count):
     """
     collection = get_collection(client)
     caption_collection = get_caption_collection(client)
-    
+
     current_count = collection.count()
     total_count = current_count + new_count
-    
+
     if total_count > limit:
         num_to_delete = total_count - limit
         print(f"Collection limit exceeded. Deleting {num_to_delete} oldest items...")
-        
+
         # Get all metadata to find timestamps
         # Note: This might be slow for very large collections, but fine for ~1000
         result = collection.get(include=["metadatas"])
         ids = result["ids"]
         metadatas = result["metadatas"]
-        
+
         # Create a list of (id, timestamp) tuples
         # Handle missing timestamps by assigning 0 (delete them first)
         items = []
         for i, meta in enumerate(metadatas):
             ts = meta.get("timestamp", 0) if meta else 0
             items.append((ids[i], ts))
-            
+
         # Sort by timestamp (ascending = oldest first)
         items.sort(key=lambda x: x[1])
-        
+
         # Select IDs to delete
         ids_to_delete = [item[0] for item in items[:num_to_delete]]
-        
+
         # Delete from both collections
         collection.delete(ids=ids_to_delete)
         caption_collection.delete(ids=ids_to_delete)
