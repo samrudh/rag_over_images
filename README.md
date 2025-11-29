@@ -7,6 +7,7 @@ A clever computer vision system that helps you find specific objects in your pho
 - **Smart Load Management**: Search button automatically disables during processing to prevent database overload and double submissions.
 - **Observability**: "Verbose Mode" toggle in the UI provides real-time logs of the RAG pipeline (embedding, retrieval, grounding).
 - **Smart Search based on public LLM**: Generates intelligent query suggestions using Gemini for enhanced search discovery.
+- **LLM based Validation**: Uses Gemini to verify if the search results actually contain the requested object, providing a second layer of intelligent filtering.
 - **Graceful Timeouts**: Queries exceeding 10 seconds are handled gracefully to ensure system responsiveness.
 
 ## Data Flow Documentation
@@ -78,16 +79,21 @@ The query process retrieves relevant images using multi-modal similarity and per
    - Cache the query embedding and results to avoid re-processing similar queries
    - Apply timeout (default 10 seconds) to prevent long-running queries
 
-5. **Caching Mechanism**:
+5. **Smart Validation (Optional)**:
+   - If enabled, sends the query and retrieved images to Gemini-2.5-flash
+   - The LLM analyzes the images to confirm if the requested object is truly present
+   - Returns a "Yes/No" validation with a brief explanation, displayed to the user
+
+6. **Caching Mechanism**:
    - Maintains a deque cache of 10 recent queries
    - Uses cosine similarity to find cached results for semantically close queries
    - Avoids re-running expensive grounding on repeated or similar searches
 
 ```
-    +-------------+    +-----------------+    +------------------+    +-------------+
-    |   Query     | -> |  Embedding     | -> |   Retrieval      | -> |  Grounding  |
-    |             |    |   Generation   |    | (Visual+Caption) |    | & Results   |
-    +-------------+    +-----------------+    +------------------+    +-------------+
+    +-------------+    +-----------------+    +------------------+    +-------------+    +--------------+
+    |   Query     | -> |  Embedding     | -> |   Retrieval      | -> |  Grounding  | -> |  LLM Validation  |
+    |             |    |   Generation   |    | (Visual+Caption) |    | & Results   |    |  (Optional)  |
+    +-------------+    +-----------------+    +------------------+    +-------------+    +--------------+
 ```
 
 ### Models Used
