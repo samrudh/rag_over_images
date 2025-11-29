@@ -196,6 +196,11 @@ rag-query --interactive
 rag-app
 ```
 
+#### Alternative  to run web application
+```bash
+streamlit run rag_over_images/app.py
+```
+
 #### Web Interface
 1. Start the application: `rag-app`
    - Or run directly: `venv/bin/streamlit run rag_over_images/app.py`
