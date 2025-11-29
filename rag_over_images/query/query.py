@@ -242,6 +242,10 @@ class RAGQuerySystem:
                 similarity = 1 - dist
                 if similarity >= visual_threshold:
                     visual_paths.append(meta["path"])
+                    self._log(
+                        f"Found visual match (Sim: {similarity:.2f} >= {visual_threshold})",
+                        log_callback,
+                    )
                 else:
                     self._log(
                         f"Filtered out visual match (Sim: {similarity:.2f} < {visual_threshold})",
@@ -266,6 +270,10 @@ class RAGQuerySystem:
                 similarity = 1 - dist
                 if similarity >= caption_threshold:
                     caption_paths.append(meta["path"])
+                    self._log(
+                        f"Found caption match (Sim: {similarity:.2f} >= {caption_threshold})",
+                        log_callback,
+                    )
                 else:
                     self._log(
                         f"Filtered out caption match (Sim: {similarity:.2f} < {caption_threshold})",
