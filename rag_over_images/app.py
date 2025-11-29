@@ -94,7 +94,8 @@ if verbose_mode:
     else:
         log_container.info("No logs yet.")
 else:
-    log_container = None
+    # Use st.empty() as a placeholder instead of None to satisfy type checker
+    log_container = st.empty()
 
 # Smart Query Suggestions Control
 st.sidebar.markdown("---")
@@ -163,7 +164,7 @@ if clean_ingest or append_ingest:
     progress_bar = st.progress(0)
     status_text = st.empty()
 
-    def update_progress(current, total, message):
+    def update_progress(current: int, total: int, message: str) -> None:
         progress = min(current / total, 1.0)
         progress_bar.progress(progress)
         status_text.text(f"Processing... ({current}/{total})")
@@ -211,8 +212,8 @@ if clean_ingest or append_ingest:
                     )
                     if suggestions:
                         # Save to file
-                        with open("data/suggested_queries.json", "w") as f:
-                            json.dump(suggestions, f)
+                        with open("data/suggested_queries.json", "w", encoding="utf-8") as f_out:
+                            json.dump(suggestions, f_out)
 
                         st.session_state.system_logs.append(
                             f"LLM smart query suggestion process complete."
@@ -242,12 +243,9 @@ if clean_ingest or append_ingest:
     st.rerun()
 
 # --- Query Section ---
-# --- Query Section ---
 st.header("2. Query Images")
 
 
-if "search_results" not in st.session_state:
-    st.session_state.search_results = None
 if "search_results" not in st.session_state:
     st.session_state.search_results = None
 
@@ -261,8 +259,8 @@ with st.form("query_form"):
     suggestions_file = "data/suggested_queries.json"
     if os.path.exists(suggestions_file):
         try:
-            with open(suggestions_file, "r") as f:
-                all_suggestions = json.load(f)
+            with open(suggestions_file, "r", encoding="utf-8") as f_in:
+                all_suggestions = json.load(f_in)
             if all_suggestions:
                 # Pick 3-4 random suggestions
                 random_suggestions = random.sample(
@@ -316,7 +314,7 @@ if search_submitted:
         # Container for logs (temporary for this run)
         # log_container = st.empty() # Removed in favor of sidebar
 
-        def log_to_ui(message):
+        def log_to_ui(message: str) -> None:
             st.session_state.system_logs.append(message)
             if verbose_mode and log_container:
                 log_container.code("\n".join(st.session_state.system_logs[-50:]))

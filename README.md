@@ -144,7 +144,7 @@ pip install -e .
 ## System Configuration
 
 ### Database Configuration
-- The system maintains a FIFO limit of 1000 images maximum in the database. When appending new images that would exceed this limit, the oldest images are automatically deleted to make space.
+- The system maintains a FIFO limit of 100 images maximum in the database. When appending new images that would exceed this limit, the oldest images are automatically deleted to make space.
 - Results are cached in memory for up to 10 recent queries to improve performance for similar searches.
 
 ### UI Configuration

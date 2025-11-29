@@ -42,6 +42,7 @@ dependencies = [
     "tqdm",
     "scipy",
     "numpy",
+    "google-generativeai",
 ]
 
 [project.optional-dependencies]

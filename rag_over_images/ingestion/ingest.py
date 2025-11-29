@@ -27,9 +27,14 @@ SUPPORTED_EXTS = (".jpg", ".jpeg", ".png", ".bmp", ".webp")
 N_IMAGES = 100
 
 
+from typing import Optional, Callable
+
 def ingest_images(
-    input_dir=INPUT_DIR, n_images=N_IMAGES, progress_callback=None, mode="append"
-):
+    input_dir: str = INPUT_DIR,
+    n_images: int = N_IMAGES,
+    progress_callback: Optional[Callable[[int, int, str], None]] = None,
+    mode: str = "append",
+) -> None:
     """
     Reads images from input_dir, generates embeddings, and stores them in ChromaDB.
     mode: "clean" (wipe DB first) or "append" (add to existing, maintain limit)

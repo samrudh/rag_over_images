@@ -1,6 +1,8 @@
 import os
+from typing import Tuple, List, Any
 import chromadb
-from chromadb.config import Settings
+from chromadb.api import ClientAPI
+from chromadb.api.models.Collection import Collection
 from sentence_transformers import SentenceTransformer
 from transformers import BlipProcessor, BlipForConditionalGeneration
 
@@ -13,7 +15,7 @@ TEXT_EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 CAPTION_MODEL_NAME = "Salesforce/blip-image-captioning-base"
 
 
-def get_chroma_client():
+def get_chroma_client() -> ClientAPI:
     """
     Returns a persistent ChromaDB client so data is saved to disk
     and can be accessed by the query script.
@@ -23,7 +25,7 @@ def get_chroma_client():
     return client
 
 
-def get_collection(client):
+def get_collection(client: ClientAPI) -> Collection:
     """
     Get or create the collection for image embeddings.
     """
@@ -32,7 +34,7 @@ def get_collection(client):
     )
 
 
-def get_caption_collection(client):
+def get_caption_collection(client: ClientAPI) -> Collection:
     """
     Get or create the collection for image captions.
     """
@@ -41,7 +43,7 @@ def get_caption_collection(client):
     )
 
 
-def get_embedding_model():
+def get_embedding_model() -> SentenceTransformer:
     """
     Load the MiniCLIP model for generating embeddings.
     """
@@ -49,7 +51,7 @@ def get_embedding_model():
     return model
 
 
-def get_text_embedding_model():
+def get_text_embedding_model() -> SentenceTransformer:
     """
     Load the all-MiniLM-L6-v2 model for generating text embeddings for captions.
     """
@@ -57,7 +59,7 @@ def get_text_embedding_model():
     return model
 
 
-def get_caption_model():
+def get_caption_model() -> Tuple[BlipProcessor, BlipForConditionalGeneration]:
     """
     Load the BLIP model for image captioning.
     """
@@ -66,7 +68,7 @@ def get_caption_model():
     return processor, model
 
 
-def get_collection_count(client):
+def get_collection_count(client: ClientAPI) -> int:
     """
     Returns the number of items in the image collection.
     """
@@ -74,7 +76,7 @@ def get_collection_count(client):
     return collection.count()
 
 
-def clear_collection(client):
+def clear_collection(client: ClientAPI) -> None:
     """
     Deletes and recreates the collections to clear all data.
     """
@@ -89,7 +91,7 @@ def clear_collection(client):
     get_caption_collection(client)
 
 
-def manage_collection_limit(client, limit, new_count):
+def manage_collection_limit(client: ClientAPI, limit: int, new_count: int) -> None:
     """
     Ensures the collection does not exceed the limit by deleting the oldest items.
     """
@@ -112,12 +114,21 @@ def manage_collection_limit(client, limit, new_count):
         # Create a list of (id, timestamp) tuples
         # Handle missing timestamps by assigning 0 (delete them first)
         items = []
-        for i, meta in enumerate(metadatas):
-            ts = meta.get("timestamp", 0) if meta else 0
-            items.append((ids[i], ts))
+        # metadatas can be None if empty, but here we expect list if count > 0
+        if metadatas and ids: 
+             for i, meta in enumerate(metadatas):
+                ts = meta.get("timestamp", 0) if meta else 0
+                items.append((ids[i], ts))
 
         # Sort by timestamp (ascending = oldest first)
-        items.sort(key=lambda x: x[1])
+        # Type hint for key is needed because mypy infers Any from tuple index
+        def get_timestamp(x: Tuple[str, Any]) -> float:
+            val = x[1]
+            if isinstance(val, (int, float)):
+                return float(val)
+            return 0.0
+            
+        items.sort(key=get_timestamp)
 
         # Select IDs to delete
         ids_to_delete = [item[0] for item in items[:num_to_delete]]

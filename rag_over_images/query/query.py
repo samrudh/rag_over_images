@@ -11,6 +11,7 @@ from transformers.dynamic_module_utils import get_imports
 from collections import deque
 from scipy.spatial.distance import cosine
 import time
+from typing import List, Tuple, Optional, Dict, Any, Union, Callable
 
 # Add parent directory to path to import utils
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -36,7 +37,7 @@ def fixed_get_imports(filename: str | os.PathLike) -> list[str]:
     return imports
 
 
-def load_florence_model():
+def load_florence_model() -> Tuple[Any, Any]:
     try:
         print(f"Loading Florence-2 model ({FLORENCE_MODEL_ID})...")
         # trust_remote_code=True is required for Florence-2
@@ -55,7 +56,9 @@ def load_florence_model():
         return None, None
 
 
-def run_grounding(model, processor, image_path, text_query):
+def run_grounding(
+    model: Any, processor: Any, image_path: str, text_query: str
+) -> Optional[Dict[str, Any]]:
     """
     Runs Phrase Grounding on the image for the given text query.
     """
@@ -91,7 +94,9 @@ def run_grounding(model, processor, image_path, text_query):
     return parsed_answer
 
 
-def draw_boxes(image_path, parsed_result, output_path):
+def draw_boxes(
+    image_path: str, parsed_result: Dict[str, Any], output_path: str
+) -> Optional[str]:
     """
     Draws bounding boxes on the image and saves it.
     """
@@ -124,11 +129,11 @@ def draw_boxes(image_path, parsed_result, output_path):
 
 
 class QueryCache:
-    def __init__(self, maxlen=10, similarity_threshold=0.85):
-        self.cache = deque(maxlen=maxlen)
+    def __init__(self, maxlen: int = 10, similarity_threshold: float = 0.85) -> None:
+        self.cache: deque = deque(maxlen=maxlen)
         self.threshold = similarity_threshold
 
-    def find_similar(self, query_embedding):
+    def find_similar(self, query_embedding: List[float]) -> Optional[List[Dict[str, Any]]]:
         """
         Finds a cached result if the query is semantically similar.
         Returns the cached result if found, else None.
@@ -141,13 +146,13 @@ class QueryCache:
                 return cached_result
         return None
 
-    def add(self, query_embedding, result):
+    def add(self, query_embedding: List[float], result: List[Dict[str, Any]]) -> None:
         """Adds a query and its result to the cache."""
         self.cache.append((query_embedding, result))
 
 
 class RAGQuerySystem:
-    def __init__(self):
+    def __init__(self) -> None:
         print("Initializing Query System...")
         self.client = get_chroma_client()
         self.collection = get_collection(self.client)
@@ -158,7 +163,7 @@ class RAGQuerySystem:
         self.cache = QueryCache()
         print("System Ready.")
 
-    def _log(self, message, callback=None):
+    def _log(self, message: str, callback: Optional[Callable[[str], None]] = None) -> None:
         """Helper to log messages to callback or stdout."""
         if callback:
             callback(message)
@@ -167,12 +172,12 @@ class RAGQuerySystem:
 
     def process_query(
         self,
-        query_text,
-        log_callback=None,
-        timeout=None,
-        visual_threshold=0.6,
-        caption_threshold=0.6,
-    ):
+        query_text: str,
+        log_callback: Optional[Callable[[str], None]] = None,
+        timeout: Optional[float] = None,
+        visual_threshold: float = 0.6,
+        caption_threshold: float = 0.6,
+    ) -> List[Dict[str, Any]]:
         """Process a single query with caching and logging.
 
         Args:
@@ -335,7 +340,9 @@ class RAGQuerySystem:
         self.cache.add(query_emb, query_results)
         return query_results
 
-    def _display_results(self, results, log_callback=None):
+    def _display_results(
+        self, results: List[Dict[str, Any]], log_callback: Optional[Callable[[str], None]] = None
+    ) -> None:
         if not results:
             self._log(
                 "Cached result was empty (no matches found previously).", log_callback
