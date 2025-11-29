@@ -78,7 +78,7 @@ def generate_query_suggestions(captions: List[str], api_key: str) -> List[str]:
         return []
 
 
-def validate_search_results(query: str, image_paths: List[str], api_key: str) -> str:
+def validate_search_results(query: str, image_paths: List[str], api_key: str) -> tuple[str, List[int]]:
     """
     Validates if the query object is present in the provided images using Gemini.
 
@@ -88,10 +88,12 @@ def validate_search_results(query: str, image_paths: List[str], api_key: str) ->
         api_key (str): Gemini API Key.
 
     Returns:
-        str: The validation response from the LLM.
+        tuple[str, List[int]]: A tuple containing:
+            - A text explanation of the validation results.
+            - A list of indices (0-based) of the images that contain the object.
     """
     if not api_key:
-        return "Validation skipped: No API Key provided."
+        return "Validation skipped: No API Key provided.", list(range(len(image_paths)))
 
     try:
         genai.configure(api_key=api_key)
@@ -109,22 +111,26 @@ def validate_search_results(query: str, image_paths: List[str], api_key: str) ->
                 print(f"Error loading image for validation {path}: {e}")
 
         if not images:
-            return "Validation skipped: No valid images to analyze."
+            return "Validation skipped: No valid images to analyze.", []
 
         prompt = f"""
-        As a RAG system, below are the candidate images for the query: "{query}"
+        As a RAG system, below are {len(images)} candidate images for the query: "{query}"
         
-        Please analyze them with the following criteria and convey whether the object is present or not.
+        Please analyze them with the following criteria and tell me which images actually contain the object.
         
         Criteria:
         1. Only use the images shared.
         2. NEVER use additional objects which are not present in the image to answer.
         3. Analyze carefully if what the user asked in the query is actually present in the image.
-        4. If the object is NOT present, provide a two-sentence reason why.
-        5. If present, briefly confirm which image(s) it appears in.
+        
+        Format your response strictly as a JSON object with the following structure:
+        {{
+            "explanation": "A brief summary (2-3 sentences) of what you found across the images, mentioning which ones matched and why others didn't.",
+            "valid_indices": [0, 2] // A list of integers representing the 0-based indices of the images that contain the object. If none match, return an empty list.
+        }}
+        Do not include any markdown formatting (like ```json ... ```), just the raw JSON string.
         """
 
-        # content = [prompt, *images] # This syntax might not work directly depending on library version
         # Construct content list
         content: List[Any] = [prompt]
         content.extend(images)
@@ -154,12 +160,30 @@ def validate_search_results(query: str, image_paths: List[str], api_key: str) ->
         # Check if response was blocked
         if not response.parts and response.prompt_feedback:
              print(f"Prompt feedback: {response.prompt_feedback}")
-             return f"Validation blocked by safety filters. Reason: {response.prompt_feedback}"
+             return f"Validation blocked by safety filters. Reason: {response.prompt_feedback}", list(range(len(image_paths)))
 
         if not response.candidates:
-            return "Validation failed: No response candidates returned from model."
+            return "Validation failed: No response candidates returned from model.", list(range(len(image_paths)))
 
-        return response.text
+        text = response.text.strip()
+        
+        # Clean up potential markdown formatting
+        if text.startswith("```json"):
+            text = text[7:]
+        if text.startswith("```"):
+            text = text[3:]
+        if text.endswith("```"):
+            text = text[:-3]
+        text = text.strip()
+        
+        try:
+            data = json.loads(text)
+            explanation = data.get("explanation", "No explanation provided.")
+            valid_indices = data.get("valid_indices", [])
+            return explanation, valid_indices
+        except json.JSONDecodeError:
+            print(f"LLM returned invalid JSON: {text}")
+            return f"Validation failed: Invalid JSON response. Raw: {text}", list(range(len(image_paths)))
 
     except Exception as e:
-        return f"Validation failed: {str(e)}"
+        return f"Validation failed: {str(e)}", list(range(len(image_paths)))

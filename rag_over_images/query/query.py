@@ -133,7 +133,14 @@ class QueryCache:
         self.cache: deque = deque(maxlen=maxlen)
         self.threshold = similarity_threshold
 
-    def find_similar(self, query_embedding: List[float]) -> Optional[List[Dict[str, Any]]]:
+    def _log(self, message: str, callback: Optional[Callable[[str], None]] = None) -> None:
+        """Helper to log messages to callback or stdout."""
+        if callback:
+            callback(message)
+        else:
+            print(message)
+
+    def find_similar(self, query_embedding: List[float], callback: Optional[Callable[[str], None]] = None) -> Optional[List[Dict[str, Any]]]:
         """
         Finds a cached result if the query is semantically similar.
         Returns the cached result if found, else None.
@@ -142,6 +149,7 @@ class QueryCache:
             # Calculate cosine similarity
             # 1 - cosine distance = cosine similarity
             similarity = 1 - cosine(query_embedding, cached_emb)
+            self._log(f"Cache Similarity: {similarity}", callback)
             if similarity >= self.threshold:
                 return cached_result
         return None
@@ -209,7 +217,7 @@ class RAGQuerySystem:
 
         # 2. Check Cache
         self._log("Checking cache...", log_callback)
-        cached_result = self.cache.find_similar(query_emb)
+        cached_result = self.cache.find_similar(query_emb, log_callback)
         if cached_result:
             self._log(
                 f"--> Cache Hit! Found similar past query. Using cached results.",

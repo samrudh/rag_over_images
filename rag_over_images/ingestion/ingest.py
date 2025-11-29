@@ -124,7 +124,7 @@ def ingest_images(
 
             if progress_callback:
                 progress_callback(
-                    idx, total_files, f"Generated caption for {img_file}: {caption}"
+                    idx, total_files, f"Generated caption for {img_file}:\n{caption}"
                 )
 
             # Generate caption embedding

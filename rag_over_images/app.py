@@ -339,10 +339,20 @@ if search_submitted:
                 if use_validation and results and gemini_api_key:
                     with st.spinner("Validating results with Gemini..."):
                         image_paths = [r["path"] for r in results]
-                        validation_response = LLM.validate_search_results(
+                        validation_response, valid_indices = LLM.validate_search_results(
                             query_text, image_paths, gemini_api_key
                         )
                         st.session_state.validation_response = validation_response
+                        
+                        # Filter results based on valid_indices
+                        if valid_indices is not None:
+                            filtered_results = [results[i] for i in valid_indices if i < len(results)]
+                            if len(filtered_results) < len(results):
+                                log_to_ui(f"Smart Validation filtered out {len(results) - len(filtered_results)} images.")
+                            st.session_state.search_results = filtered_results
+                        else:
+                             st.session_state.search_results = results
+
                 else:
                     st.session_state.validation_response = None
                     

@@ -198,6 +198,7 @@ rag-app
 
 #### Web Interface
 1. Start the application: `rag-app`
+   - Or run directly: `venv/bin/streamlit run rag_over_images/app.py`
 2. Open browser to `http://localhost:8501`
 3. Upload images or use existing dataset
 4. Ask questions like "Is there a bicycle?" or "Find all dogs"
