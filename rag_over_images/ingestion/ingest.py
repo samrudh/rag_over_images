@@ -67,7 +67,7 @@ def ingest_images(
         print("Mode: Append. Checking limits...")
         # We need to know how many we are about to add
         # But we haven't filtered the list yet (we did sample, but let's be safe)
-        manage_collection_limit(client, limit=1000, new_count=len(image_files))
+        manage_collection_limit(client, limit=100, new_count=len(image_files))
 
     collection = get_collection(client)
     model = get_embedding_model()
