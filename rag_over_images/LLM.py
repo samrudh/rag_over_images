@@ -27,8 +27,8 @@ def generate_query_suggestions(captions: List[str], api_key: str) -> List[str]:
         # If the key must be passed directly:
         genai.configure(api_key=api_key)
 
-        # Using gemini-1.5-flash-latest as a stable alias
-        model = genai.GenerativeModel("gemini-1.5-flash-latest")
+        # Using gemini-2.5-flash as requested
+        model = genai.GenerativeModel("gemini-2.5-flash")
 
         # Sample captions if there are too many to fit in context comfortably
         sample_captions = captions[:100] if len(captions) > 100 else captions
@@ -95,8 +95,8 @@ def validate_search_results(query: str, image_paths: List[str], api_key: str) ->
 
     try:
         genai.configure(api_key=api_key)
-        # Using gemini-1.5-flash-latest as a stable alias
-        model = genai.GenerativeModel("gemini-1.5-flash-latest")
+        # Using gemini-2.5-flash as requested
+        model = genai.GenerativeModel("gemini-2.5-flash")
 
         # Load images
         images = []
@@ -129,7 +129,36 @@ def validate_search_results(query: str, image_paths: List[str], api_key: str) ->
         content: List[Any] = [prompt]
         content.extend(images)
 
-        response = model.generate_content(content)
+        # Configure safety settings to avoid blocking valid responses
+        safety_settings = [
+            {
+                "category": "HARM_CATEGORY_HARASSMENT",
+                "threshold": "BLOCK_NONE",
+            },
+            {
+                "category": "HARM_CATEGORY_HATE_SPEECH",
+                "threshold": "BLOCK_NONE",
+            },
+            {
+                "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                "threshold": "BLOCK_NONE",
+            },
+            {
+                "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+                "threshold": "BLOCK_NONE",
+            },
+        ]
+
+        response = model.generate_content(content, safety_settings=safety_settings) # type: ignore
+        
+        # Check if response was blocked
+        if not response.parts and response.prompt_feedback:
+             print(f"Prompt feedback: {response.prompt_feedback}")
+             return f"Validation blocked by safety filters. Reason: {response.prompt_feedback}"
+
+        if not response.candidates:
+            return "Validation failed: No response candidates returned from model."
+
         return response.text
 
     except Exception as e:
