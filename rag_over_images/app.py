@@ -368,7 +368,7 @@ if st.session_state.search_results is not None:
     
     # Display Validation Response if available
     if "validation_response" in st.session_state and st.session_state.validation_response:
-        st.info(f"**AI Validation:**\n\n{st.session_state.validation_response}")
+        st.info(f"**LLM Validation:**\n\n{st.session_state.validation_response}")
 
     if results:
         st.success(f"Found {len(results)} matches!")
