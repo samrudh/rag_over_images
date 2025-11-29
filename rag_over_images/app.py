@@ -299,6 +299,11 @@ with st.form("query_form"):
             help="Minimum similarity for Caption matches",
         )
 
+    # Validation Toggle
+    use_validation = False
+    if gemini_api_key:
+        use_validation = st.checkbox("LLM based validation using Gemini", value=False)
+
     search_submitted = st.form_submit_button(
         "Search", disabled=st.session_state.search_running, on_click=start_search
     )
@@ -329,6 +334,18 @@ if search_submitted:
                     caption_threshold=caption_threshold,
                 )
                 st.session_state.search_results = results
+                
+                # Smart Validation
+                if use_validation and results and gemini_api_key:
+                    with st.spinner("Validating results with Gemini..."):
+                        image_paths = [r["path"] for r in results]
+                        validation_response = LLM.validate_search_results(
+                            query_text, image_paths, gemini_api_key
+                        )
+                        st.session_state.validation_response = validation_response
+                else:
+                    st.session_state.validation_response = None
+                    
             except Exception as e:
                 st.error(f"An error occurred during search: {e}")
                 # Don't rerun immediately on error so user can see it
@@ -348,6 +365,11 @@ if st.session_state.search_results is not None:
     #     st.code("\n".join(st.session_state.search_logs))
 
     results = st.session_state.search_results
+    
+    # Display Validation Response if available
+    if "validation_response" in st.session_state and st.session_state.validation_response:
+        st.info(f"**AI Validation:**\n\n{st.session_state.validation_response}")
+
     if results:
         st.success(f"Found {len(results)} matches!")
         cols = st.columns(len(results))

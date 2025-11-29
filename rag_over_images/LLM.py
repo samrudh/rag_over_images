@@ -4,7 +4,7 @@ import json
 import random
 
 
-from typing import List
+from typing import List, Any
 
 def generate_query_suggestions(captions: List[str], api_key: str) -> List[str]:
     """
@@ -27,9 +27,8 @@ def generate_query_suggestions(captions: List[str], api_key: str) -> List[str]:
         # If the key must be passed directly:
         genai.configure(api_key=api_key)
 
-        # --- FIX APPLIED HERE: Changed model name to a currently recognized one ---
-        # Using gemini-2.5-flash as the currently available, best Flash model
-        model = genai.GenerativeModel("gemini-2.5-flash")
+        # Using gemini-1.5-flash-latest as a stable alias
+        model = genai.GenerativeModel("gemini-1.5-flash-latest")
 
         # Sample captions if there are too many to fit in context comfortably
         sample_captions = captions[:100] if len(captions) > 100 else captions
@@ -77,3 +76,61 @@ def generate_query_suggestions(captions: List[str], api_key: str) -> List[str]:
     except Exception as e:
         print(f"Error generating query suggestions: {e}")
         return []
+
+
+def validate_search_results(query: str, image_paths: List[str], api_key: str) -> str:
+    """
+    Validates if the query object is present in the provided images using Gemini.
+
+    Args:
+        query (str): The user's search query.
+        image_paths (List[str]): List of paths to the candidate images.
+        api_key (str): Gemini API Key.
+
+    Returns:
+        str: The validation response from the LLM.
+    """
+    if not api_key:
+        return "Validation skipped: No API Key provided."
+
+    try:
+        genai.configure(api_key=api_key)
+        # Using gemini-1.5-flash-latest as a stable alias
+        model = genai.GenerativeModel("gemini-1.5-flash-latest")
+
+        # Load images
+        images = []
+        from PIL import Image
+        for path in image_paths:
+            try:
+                img = Image.open(path)
+                images.append(img)
+            except Exception as e:
+                print(f"Error loading image for validation {path}: {e}")
+
+        if not images:
+            return "Validation skipped: No valid images to analyze."
+
+        prompt = f"""
+        As a RAG system, below are the candidate images for the query: "{query}"
+        
+        Please analyze them with the following criteria and convey whether the object is present or not.
+        
+        Criteria:
+        1. Only use the images shared.
+        2. NEVER use additional objects which are not present in the image to answer.
+        3. Analyze carefully if what the user asked in the query is actually present in the image.
+        4. If the object is NOT present, provide a two-sentence reason why.
+        5. If present, briefly confirm which image(s) it appears in.
+        """
+
+        # content = [prompt, *images] # This syntax might not work directly depending on library version
+        # Construct content list
+        content: List[Any] = [prompt]
+        content.extend(images)
+
+        response = model.generate_content(content)
+        return response.text
+
+    except Exception as e:
+        return f"Validation failed: {str(e)}"
